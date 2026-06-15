@@ -1,0 +1,55 @@
+# ============================================================================
+# Intent skalowania UPF - deklaratywna polityka skalowania
+# ============================================================================
+# Plik moze byc edytowany w trakcie dzialania kontrolera (hot-reload) -
+# kontroler wykryje zmiane i przeladuje polityke bez restartu.
+#
+# MODEL DECYZJI:
+#   Decyzja opiera sie WYLACZNIE na liczbie aktywnych sesji UE.
+#   Tiery definiuja progi w liczbie sesji (sessionThreshold) oraz przypisane
+#   zasoby CPU i RAM. Kontroler wybiera tier wg liczby sesji i skaluje pod UPF.
+# ============================================================================
+
+apiVersion: spiw.pw.edu.pl/v1
+kind: UpfScalingPolicy
+metadata:
+  name: upf-vertical-scaler
+
+spec:
+  # --- Cel skalowania (ktory pod skalujemy) ---
+  target:
+    namespace: default
+    podPrefix: open5gs-upf       # kontroler znajdzie pod po tym prefiksie
+    containerName: open5gs-upf
+
+  # --- Parametry petli sterowania ---
+  control:
+    intervalSeconds: 15          # co ile sekund odpytujemy metryke
+    cooldownSeconds: 60          # minimalny odstep miedzy operacjami skalowania
+    scaleDownStabilization: 1    # ile interwalow nizszej liczby sesji wymagane przed
+                                 # kazdym krokiem scale-down
+                                 # (scale-up jest natychmiastowy: np. T1->T3;
+                                 #  scale-down stopniowy: T3->T2->T1)
+
+  # --- Zrodlo metryki (Prometheus) ---
+  metrics:
+    prometheusUrl: "http://192.168.1.201:9090"
+    # liczba aktywnych sesji UE
+    sessionsQuery: 'amf_session{service="open5gs-amf-metrics",namespace="default"}'
+
+  # --- Tiery zasobowe (progi w LICZBIE SESJI UE) ---
+  # Kontroler wybiera najwyzszy tier, ktorego prog (sessionThreshold) zostal
+  # osiagniety. Tiery uporzadkowane rosnaco wg sessionThreshold.
+  tiers:
+    - name: T1
+      sessionThreshold: 0        # 0-5 sesji
+      cpu: "250m"
+      memory: "256Mi"
+    - name: T2
+      sessionThreshold: 6        # 6-11 sesji
+      cpu: "500m"
+      memory: "512Mi"
+    - name: T3
+      sessionThreshold: 12       # 12+ sesji
+      cpu: "1000m"
+      memory: "1024Mi"
